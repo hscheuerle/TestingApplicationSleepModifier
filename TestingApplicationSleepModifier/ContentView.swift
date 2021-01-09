@@ -69,8 +69,8 @@ struct ContentView: View {
             Toggle(isOn: dimmingBinding, label: { Text("Enabled") })
             Slider(value: brightnessBinding, in: 0...1, step: 0.001)
             Slider(value: dimnessBinding, in: 0...1, step: 0.001)
-            Slider(value: debounceTimeBinding, in: 0.25...60, step: 0.25)
-            Text("seconds: \(value)")
+            // TODO: Simultaneous gesture overrides this on tap but not press
+            Stepper("Seconds: \(value)", value: debounceTimeBinding, in: 0.25...60, step: 0.25)
         }
         .onAppear {
             value = self.activityData.dimmingDebounceSec
