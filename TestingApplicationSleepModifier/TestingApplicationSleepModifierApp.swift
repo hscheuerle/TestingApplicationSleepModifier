@@ -13,22 +13,39 @@ import Combine
 
 class ActivityData: ObservableObject {
     private var cancellable = Set<AnyCancellable>()
-    @Published private var tap: Void = ()
-    @Published private var dim: Void = ()
+    @Published var tap: Void = ()
+    @Published var dim: Void = ()
     @AppStorage("isDimmingEnabled") var isDimmingEnabled = false
-    @AppStorage("dimmingDebounceSec") var dimmingDebounceSec: Int = 1 // just keep Int since more usable in user controls
+    @AppStorage("dimmingDebounceSec") var dimmingDebounceSec: Double = 1
     @AppStorage("activeBrightness") var activeBrightness: Double = Double(UIScreen.main.brightness)
     @AppStorage("dimmingBrightness") var dimmingBrightness: Double = Double(0.2 * UIScreen.main.brightness)
-    // TODO: replace dimPub with dim state bool?, would work better with overlay to wake
-
     
     var dimPub: AnyPublisher<Void, Never> {
         $dim
             .filter { _ in self.isDimmingEnabled }
             .dropFirst()
             .eraseToAnyPublisher()
+        
     }
-    var tapPub: AnyPublisher<Void, Never> { $tap.dropFirst().eraseToAnyPublisher() }
+    
+    var tapPub: AnyPublisher<Void, Never> {
+        $tap
+            .dropFirst()
+            .eraseToAnyPublisher()
+        
+    }
+    
+    var screenIsActive: AnyPublisher<Bool, Never> {
+        Publishers
+            .Merge(
+                // Just(true), // Test this
+                tapPub.map { _ in true },
+                dimPub.map { _ in false}
+            )
+            .removeDuplicates()
+            .eraseToAnyPublisher()
+    }
+    
     func tapInput() { self.tap = () }
 
     var dimWhenInactive: AnyCancellable {
@@ -37,32 +54,45 @@ class ActivityData: ObservableObject {
             .sink { self.dim = () }
     }
     
-    init() { dimWhenInactive.store(in: &cancellable) }
+    init() {
+        dimWhenInactive.store(in: &cancellable)
+    }
+    
+    func update() {
+        cancellable.removeAll()
+        dimWhenInactive.store(in: &cancellable)
+    }
 }
 
 struct CustomScreenControlModifier: ViewModifier {
     @StateObject var activityData = ActivityData()
+    @State var isOverlayEnabled = false
     
     func body(content: Content) -> some View {
         GeometryReader { geo in
             ZStack {
+                content
+                
                 Color.clear
                     .edgesIgnoringSafeArea(.all)
                     .frame(width: geo.size.width, height: geo.size.height)
                     .contentShape(Rectangle())
-                
-                content
+                    .allowsHitTesting(isOverlayEnabled)
+                    .onTapGesture {
+                        activityData.tapInput()
+                    }
             }
             
         }
         .simultaneousGesture(TapGesture().onEnded {
+            // TODO: will long press min duration 0 work better for dragging controls?
             activityData.tapInput()
         })
-        .onReceive(activityData.tapPub, perform: {
-            UIScreen.main.brightness = CGFloat(activityData.activeBrightness)
+        .onReceive(activityData.screenIsActive, perform: { isActive in
+            isOverlayEnabled = !isActive
         })
-        .onReceive(activityData.dimPub, perform: {
-            UIScreen.main.brightness = CGFloat(activityData.dimmingBrightness)
+        .onReceive(activityData.screenIsActive, perform: { isActive in
+            UIScreen.main.brightness = CGFloat(isActive ? activityData.activeBrightness : activityData.dimmingBrightness)
         })
         .onAppear(perform: {
             UIApplication.shared.isIdleTimerDisabled = activityData.isDimmingEnabled
