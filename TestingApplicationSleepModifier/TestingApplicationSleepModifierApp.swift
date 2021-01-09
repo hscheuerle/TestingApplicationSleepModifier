@@ -59,6 +59,7 @@ class ActivityData: ObservableObject {
     }
     
     func update() {
+        // TODO: Instead of releasing and updating ARC to sub, pipe in changing dim value
         cancellable.removeAll()
         dimWhenInactive.store(in: &cancellable)
     }
@@ -71,18 +72,24 @@ struct CustomScreenControlModifier: ViewModifier {
     func body(content: Content) -> some View {
         GeometryReader { geo in
             ZStack {
-                content
-                
+                // preserves hit area for debounce when overlay is non-hit
                 Color.clear
                     .edgesIgnoringSafeArea(.all)
                     .frame(width: geo.size.width, height: geo.size.height)
                     .contentShape(Rectangle())
-                    .allowsHitTesting(isOverlayEnabled)
+                
+                content
+                
+                // overlay for capturing first hit for wake screen
+                Color.clear
+                    .edgesIgnoringSafeArea(.all)
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .contentShape(Rectangle())
+                    .allowsHitTesting(isOverlayEnabled) // nils clear framing when false
                     .onTapGesture {
                         activityData.tapInput()
                     }
             }
-            
         }
         .simultaneousGesture(TapGesture().onEnded {
             // TODO: will long press min duration 0 work better for dragging controls?
